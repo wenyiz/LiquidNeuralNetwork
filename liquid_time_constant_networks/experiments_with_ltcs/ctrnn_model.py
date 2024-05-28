@@ -2,7 +2,7 @@ import tensorflow as tf
 import numpy  as np
 import os
 
-class CTRNN(tf.nn.rnn_cell.RNNCell):
+class CTRNN(tf.compat.v1.nn.rnn_cell.RNNCell):
 
     def __init__(self, num_units,cell_clip=-1,global_feedback=False,fix_tau=True):
         self._num_units = num_units
@@ -50,8 +50,9 @@ class CTRNN(tf.nn.rnn_cell.RNNCell):
 
     def _dense(self,units,inputs,activation,name,bias_initializer=tf.constant_initializer(0.0)):
         input_size = int(inputs.shape[-1])
-        W = tf.get_variable('W_{}'.format(name), [input_size, units])
-        b = tf.get_variable("bias_{}".format(name), [units],initializer=bias_initializer)
+        # https://www.tensorflow.org/api_docs/python/tf/compat/v1/variable_scope
+        W = tf.compat.v1.get_variable('W_{}'.format(name), [input_size, units])
+        b = tf.compat.v1.get_variable("bias_{}".format(name), [units],initializer=bias_initializer)
 
         y = tf.matmul(inputs,W) + b
         if(not activation is None):
@@ -59,7 +60,7 @@ class CTRNN(tf.nn.rnn_cell.RNNCell):
 
         self.W = W
         self.b = b
-        
+
         return y
 
     def __call__(self, inputs, state, scope=None):
@@ -69,8 +70,11 @@ class CTRNN(tf.nn.rnn_cell.RNNCell):
         # or 2: input of the RNN cell merged with the current state
 
         self._input_size = int(inputs.shape[-1])
-        with tf.variable_scope(scope or type(self).__name__):
-            with tf.variable_scope("RNN",reuse=tf.AUTO_REUSE):  # Reset gate and update gate.
+        # AttributeError: module 'tensorflow' has no attribute 'variable_scope'
+        # https://www.tensorflow.org/api_docs/python/tf/compat/v1/variable_scope
+        tf.compat.v1.disable_eager_execution()
+        with tf.compat.v1.variable_scope(scope or type(self).__name__):
+            with tf.compat.v1.variable_scope("RNN",reuse=tf.compat.v1.AUTO_REUSE):  # Reset gate and update gate.
                 if(not self.fix_tau):
                     tau = tf.get_variable('tau', [],initializer=tf.constant_initializer(self.tau))
                     self._tau_var = tau
@@ -87,7 +91,7 @@ class CTRNN(tf.nn.rnn_cell.RNNCell):
                         fused_input = tf.concat([inputs,state],axis=-1)
                         input_f_prime = self._dense(units=self._num_units,inputs=fused_input,activation=tf.nn.tanh,name="step")
 
-                    # df/dt 
+                    # df/dt
                     f_prime = -state/self.tau + input_f_prime
 
                     # If we solve this ODE with explicit euler we get
@@ -100,8 +104,7 @@ class CTRNN(tf.nn.rnn_cell.RNNCell):
 
         return state,state
 
-
-class NODE(tf.nn.rnn_cell.RNNCell):
+class NODE(tf.compat.v1.nn.rnn_cell.RNNCell):
 
     def __init__(self, num_units,cell_clip=-1):
         self._num_units = num_units
@@ -175,7 +178,7 @@ class NODE(tf.nn.rnn_cell.RNNCell):
 
         self.W = W
         self.b = b
-        
+
         return y
 
     def __call__(self, inputs, state, scope=None):
@@ -189,12 +192,12 @@ class NODE(tf.nn.rnn_cell.RNNCell):
             with tf.variable_scope("RNN",reuse=tf.AUTO_REUSE):  # Reset gate and update gate.
 
                 state = self._ode_step_runge_kutta(inputs,state)
-                    
+
         return state,state
 
 
 
-class CTGRU(tf.nn.rnn_cell.RNNCell):
+class CTGRU(tf.compat.v1.nn.rnn_cell.RNNCell):
     # https://arxiv.org/abs/1710.04110
     def __init__(self, num_units,M=8,cell_clip=-1):
         self._num_units = num_units

@@ -62,8 +62,15 @@ class HarModel:
     def __init__(self,model_type,model_size,learning_rate = 0.001):
         self.model_type = model_type
         self.constrain_op = None
-        self.x = tf.placeholder(dtype=tf.float32,shape=[None,None,561])
-        self.target_y = tf.placeholder(dtype=tf.int32,shape=[None,None])
+
+        ## https://www.tensorflow.org/api_docs/python/tf/compat/v1/placeholder
+        ## To continue to use v1 functions: add compat.v1.
+        ## In addition, you need to disable "eager execution" to avoid run-time error
+        # https://stackoverflow.com/questions/53429896/how-do-i-disable-tensorflows-eager-execution
+        # https://stackoverflow.com/questions/56561734/runtimeerror-tf-placeholder-is-not-compatible-with-eager-execution
+        tf.compat.v1.disable_eager_execution()
+        self.x = tf.compat.v1.placeholder(dtype=tf.float32,shape=[None,None,561])
+        self.target_y = tf.compat.v1.placeholder(dtype=tf.int32,shape=[None,None])
 
         self.model_size = model_size
         head = self.x
@@ -90,25 +97,30 @@ class HarModel:
             head,_ = tf.nn.dynamic_rnn(self.fused_cell,head,dtype=tf.float32,time_major=True)
         elif(model_type == "ctrnn"):
             self.fused_cell = CTRNN(model_size,cell_clip=-1,global_feedback=True)
-            head,_ = tf.nn.dynamic_rnn(self.fused_cell,head,dtype=tf.float32,time_major=True)
+            # AttributeError: module 'tensorflow._api.v2.nn' has no attribute 'dynamic_rnn'
+            head,_ = tf.compat.v1.nn.dynamic_rnn(self.fused_cell,head,dtype=tf.float32,time_major=True)
         else:
             raise ValueError("Unknown model type '{}'".format(model_type))
 
-
-        self.y = tf.layers.Dense(6,activation=None)(head)
+        ## AttributeError: module 'tensorflow' has no attribute 'layers'
+        # https://github.com/tensorflow/tensorflow/issues/38003
+        self.y = tf.keras.layers.Dense(6,activation=None)(head)
         print("logit shape: ",str(self.y.shape))
-        self.loss = tf.reduce_mean(tf.losses.sparse_softmax_cross_entropy(
+        # AttributeError: module 'keras.api._v2.keras.losses' has no attribute 'sparse_softmax_cross_entropy
+        self.loss = tf.reduce_mean(tf.compat.v1.losses.sparse_softmax_cross_entropy(
             labels = self.target_y,
             logits = self.y,
         ))
-        optimizer = tf.train.AdamOptimizer(learning_rate)
+        # AttributeError: module 'tensorflow._api.v2.train' has no attribute 'AdamOptimizer'
+        optimizer = tf.compat.v1.train.AdamOptimizer(learning_rate)
         self.train_step = optimizer.minimize(self.loss)
 
         model_prediction = tf.argmax(input=self.y, axis=2)
         self.accuracy = tf.reduce_mean(tf.cast(tf.equal(model_prediction, tf.cast(self.target_y,tf.int64)), tf.float32))
-
-        self.sess = tf.InteractiveSession()
-        self.sess.run(tf.global_variables_initializer())
+        # AttributeError: module 'tensorflow' has no attribute 'InteractiveSession'
+        self.sess = tf.compat.v1.InteractiveSession()
+        # AttributeError: module 'tensorflow' has no attribute 'global_variables_initializer'
+        self.sess.run(tf.compat.v1.global_variables_initializer())
 
         self.result_file = os.path.join("results","har","{}_{}.csv".format(model_type,model_size))
         if(not os.path.exists("results/har")):
@@ -120,8 +132,8 @@ class HarModel:
         self.checkpoint_path = os.path.join("tf_sessions","har","{}".format(model_type))
         if(not os.path.exists("tf_sessions/har")):
             os.makedirs("tf_sessions/har")
-            
-        self.saver = tf.train.Saver()
+        # AttributeError: module 'tensorflow._api.v2.train' has no attribute 'Saver'
+        self.saver = tf.compat.v1.train.Saver()
 
     def save(self):
         self.saver.save(self.sess, self.checkpoint_path)

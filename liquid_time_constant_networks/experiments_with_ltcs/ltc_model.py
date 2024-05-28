@@ -14,7 +14,24 @@ class ODESolver(Enum):
     Explicit = 1
     RungeKutta = 2
 
-class LTCCell(tf.nn.rnn_cell.RNNCell):
+'''
+tf.nn.rnn_cell.RNNCell causes the following error:
+AttributeError: module 'tensorflow._api.v2.nn' has no attribute 'rnn_cell'
+
+1) Trying to change to tf.contrib that is implemented since V1.x
+https://stackoverflow.com/questions/47898147/tensorflow-module-import-error-attributeerror-module-tensorflow-python-ops-nn
+tf.contrib.rnn
+
+failed if you are using tf 2.x
+
+2) Try additional library: from tensorflow.keras.layers import RNN
+https://stackoverflow.com/questions/60882663/modulenotfounderror-no-module-named-tensorflow-contrib-with-tensorflow-2-0-0
+tensorflow.contrib doesn't exist in 2.0.
+To fix, use the available choice from tensor 2.x
+https://www.tensorflow.org/api_docs/python/tf/compat/v1/nn/rnn_cell
+'''
+#class LTCCell(tf.nn.rnn_cell.RNNCell):
+class LTCCell(tf.compat.v1.nn.rnn_cell.RNNCell):
 
     def __init__(self, num_units):
 
@@ -36,7 +53,7 @@ class LTCCell(tf.nn.rnn_cell.RNNCell):
         self._cm_init_max = 0.5
         self._gleak_init_min = 1
         self._gleak_init_max = 1
-        
+
         self._w_min_value = 0.00001
         self._w_max_value = 1000
         self._gleak_min_value = 0.00001
@@ -47,7 +64,7 @@ class LTCCell(tf.nn.rnn_cell.RNNCell):
         self._fix_cm = None
         self._fix_gleak = None
         self._fix_vleak = None
-        
+
     @property
     def state_size(self):
         return self._num_units
@@ -58,18 +75,18 @@ class LTCCell(tf.nn.rnn_cell.RNNCell):
 
     def _map_inputs(self,inputs,resuse_scope=False):
         varscope = "sensory_mapping"
-        reuse = tf.AUTO_REUSE
+        reuse = tf.compat.v1.AUTO_REUSE
         if(resuse_scope):
             varscope = self._sensory_varscope
             reuse = True
 
-        with tf.variable_scope(varscope,reuse=reuse) as scope:
+        with tf.compat.v1.variable_scope(varscope,reuse=reuse) as scope:
             self._sensory_varscope = scope
             if(self._input_mapping == MappingType.Affine or self._input_mapping == MappingType.Linear):
-                w =  tf.get_variable(name='input_w',shape=[self._input_size],trainable=True,initializer=tf.initializers.constant(1))
+                w =  tf.compat.v1.get_variable(name='input_w',shape=[self._input_size],trainable=True,initializer=tf.initializers.constant(1))
                 inputs = inputs * w
             if(self._input_mapping == MappingType.Affine):
-                b =  tf.get_variable(name='input_b',shape=[self._input_size],trainable=True,initializer=tf.initializers.constant(0))
+                b =  tf.compat.v1.get_variable(name='input_b',shape=[self._input_size],trainable=True,initializer=tf.initializers.constant(0))
                 inputs = inputs + b
         return inputs
 
@@ -78,7 +95,7 @@ class LTCCell(tf.nn.rnn_cell.RNNCell):
         pass
 
     def __call__(self, inputs, state, scope=None):
-        with tf.variable_scope("ltc"):
+        with tf.compat.v1.variable_scope("ltc"):
             if(not self._is_built):
                 # TODO: Move this part into the build method inherited form tf.Layers
                 self._is_built = True
@@ -91,7 +108,7 @@ class LTCCell(tf.nn.rnn_cell.RNNCell):
                     self._input_size,
                     int(inputs[-1])
                 ))
-            
+
             inputs = self._map_inputs(inputs)
 
             if(self._solver == ODESolver.Explicit):
@@ -104,44 +121,44 @@ class LTCCell(tf.nn.rnn_cell.RNNCell):
                 raise ValueError("Unknown ODE solver '{}'".format(str(self._solver)))
 
             outputs = next_state
-            
-        return outputs, next_state 
+
+        return outputs, next_state
 
     # Create tf variables
     def _get_variables(self):
-        self.sensory_mu = tf.get_variable(name='sensory_mu',shape=[self._input_size,self._num_units],trainable=True,initializer=tf.initializers.random_uniform(minval=0.3,maxval=0.8))
-        self.sensory_sigma = tf.get_variable(name='sensory_sigma',shape=[self._input_size,self._num_units],trainable=True,initializer=tf.initializers.random_uniform(minval=3.0,maxval=8.0))
-        self.sensory_W = tf.get_variable(name='sensory_W',shape=[self._input_size,self._num_units],trainable=True,initializer=tf.initializers.constant(np.random.uniform(low=self._w_init_min,high=self._w_init_max,size=[self._input_size,self._num_units])))
+        self.sensory_mu = tf.compat.v1.get_variable(name='sensory_mu',shape=[self._input_size,self._num_units],trainable=True,initializer=tf.initializers.random_uniform(minval=0.3,maxval=0.8))
+        self.sensory_sigma = tf.compat.v1.get_variable(name='sensory_sigma',shape=[self._input_size,self._num_units],trainable=True,initializer=tf.initializers.random_uniform(minval=3.0,maxval=8.0))
+        self.sensory_W = tf.compat.v1.get_variable(name='sensory_W',shape=[self._input_size,self._num_units],trainable=True,initializer=tf.initializers.constant(np.random.uniform(low=self._w_init_min,high=self._w_init_max,size=[self._input_size,self._num_units])))
         sensory_erev_init = 2*np.random.randint(low=0,high=2,size=[self._input_size,self._num_units])-1
-        self.sensory_erev = tf.get_variable(name='sensory_erev',shape=[self._input_size,self._num_units],trainable=True,initializer=tf.initializers.constant(sensory_erev_init*self._erev_init_factor))
+        self.sensory_erev = tf.compat.v1.get_variable(name='sensory_erev',shape=[self._input_size,self._num_units],trainable=True,initializer=tf.initializers.constant(sensory_erev_init*self._erev_init_factor))
 
-        self.mu = tf.get_variable(name='mu',shape=[self._num_units,self._num_units],trainable=True,initializer=tf.initializers.random_uniform(minval=0.3,maxval=0.8))
-        self.sigma = tf.get_variable(name='sigma',shape=[self._num_units,self._num_units],trainable=True,initializer=tf.initializers.random_uniform(minval=3.0,maxval=8.0))
-        self.W = tf.get_variable(name='W',shape=[self._num_units,self._num_units],trainable=True,initializer=tf.initializers.constant(np.random.uniform(low=self._w_init_min,high=self._w_init_max,size=[self._num_units,self._num_units])))
+        self.mu = tf.compat.v1.get_variable(name='mu',shape=[self._num_units,self._num_units],trainable=True,initializer=tf.initializers.random_uniform(minval=0.3,maxval=0.8))
+        self.sigma = tf.compat.v1.get_variable(name='sigma',shape=[self._num_units,self._num_units],trainable=True,initializer=tf.initializers.random_uniform(minval=3.0,maxval=8.0))
+        self.W = tf.compat.v1.get_variable(name='W',shape=[self._num_units,self._num_units],trainable=True,initializer=tf.initializers.constant(np.random.uniform(low=self._w_init_min,high=self._w_init_max,size=[self._num_units,self._num_units])))
 
         erev_init = 2*np.random.randint(low=0,high=2,size=[self._num_units,self._num_units])-1
-        self.erev = tf.get_variable(name='erev',shape=[self._num_units,self._num_units],trainable=True,initializer=tf.initializers.constant(erev_init*self._erev_init_factor))
+        self.erev = tf.compat.v1.get_variable(name='erev',shape=[self._num_units,self._num_units],trainable=True,initializer=tf.initializers.constant(erev_init*self._erev_init_factor))
 
         if(self._fix_vleak is None):
-            self.vleak = tf.get_variable(name='vleak',shape=[self._num_units],trainable=True,initializer=tf.initializers.random_uniform(minval=-0.2,maxval=0.2))
+            self.vleak = tf.compat.v1.get_variable(name='vleak',shape=[self._num_units],trainable=True,initializer=tf.initializers.random_uniform(minval=-0.2,maxval=0.2))
         else:
-            self.vleak = tf.get_variable(name='vleak',shape=[self._num_units],trainable=False,initializer=tf.initializers.constant(self._fix_vleak))
+            self.vleak = tf.compat.v1.get_variable(name='vleak',shape=[self._num_units],trainable=False,initializer=tf.initializers.constant(self._fix_vleak))
 
         if(self._fix_gleak is None):
             initializer=tf.initializers.constant(self._gleak_init_min)
             if(self._gleak_init_max > self._gleak_init_min):
                 initializer = tf.initializers.random_uniform(minval= self._gleak_init_min,maxval = self._gleak_init_max)
-            self.gleak = tf.get_variable(name='gleak',shape=[self._num_units],trainable=True,initializer=initializer)
+            self.gleak = tf.compat.v1.get_variable(name='gleak',shape=[self._num_units],trainable=True,initializer=initializer)
         else:
-            self.gleak = tf.get_variable(name='gleak',shape=[self._num_units],trainable=False,initializer=tf.initializers.constant(self._fix_gleak))
+            self.gleak = tf.compat.v1.get_variable(name='gleak',shape=[self._num_units],trainable=False,initializer=tf.initializers.constant(self._fix_gleak))
 
         if(self._fix_cm is None):
             initializer=tf.initializers.constant(self._cm_init_min)
             if(self._cm_init_max > self._cm_init_min):
                 initializer = tf.initializers.random_uniform(minval= self._cm_init_min,maxval = self._cm_init_max)
-            self.cm_t = tf.get_variable(name='cm_t',shape=[self._num_units],trainable=True,initializer=initializer)
+            self.cm_t = tf.compat.v1.get_variable(name='cm_t',shape=[self._num_units],trainable=True,initializer=initializer)
         else:
-            self.cm_t = tf.get_variable(name='cm_t',shape=[self._num_units],trainable=False,initializer=tf.initializers.constant(self._fix_cm))
+            self.cm_t = tf.compat.v1.get_variable(name='cm_t',shape=[self._num_units],trainable=False,initializer=tf.initializers.constant(self._fix_cm))
 
     # Hybrid euler method
     def _ode_step(self,inputs,state):
@@ -160,7 +177,7 @@ class LTCCell(tf.nn.rnn_cell.RNNCell):
 
             w_numerator = tf.reduce_sum(rev_activation,axis=1) + w_numerator_sensory
             w_denominator = tf.reduce_sum(w_activation,axis=1) + w_denominator_sensory
-            
+
             numerator = self.cm_t * v_pre + self.gleak*self.vleak + w_numerator
             denominator = self.cm_t + self.gleak + w_denominator
 
@@ -184,7 +201,7 @@ class LTCCell(tf.nn.rnn_cell.RNNCell):
         synapse_in = self.erev * w_activation
 
         sum_in = tf.reduce_sum(sensory_in,axis=1) - v_pre*w_reduced_synapse + tf.reduce_sum(synapse_in,axis=1) - v_pre * w_reduced_sensory
-        
+
         f_prime = 1/self.cm_t * (self.gleak * (self.vleak-v_pre) + sum_in)
 
         return f_prime
@@ -220,13 +237,13 @@ class LTCCell(tf.nn.rnn_cell.RNNCell):
             synapse_in = self.erev * w_activation
 
             sum_in = tf.reduce_sum(sensory_in,axis=1) - v_pre*w_reduced_synapse + tf.reduce_sum(synapse_in,axis=1) - v_pre * w_reduced_sensory
-            
+
             f_prime = 1/self.cm_t * (self.gleak * (self.vleak-v_pre) + sum_in)
 
             v_pre = v_pre + 0.1 * f_prime
 
         return v_pre
-    
+
     def _sigmoid(self,v_pre,mu,sigma):
         v_pre = tf.reshape(v_pre,[-1,v_pre.shape[-1],1])
         mues = v_pre - mu
@@ -234,11 +251,13 @@ class LTCCell(tf.nn.rnn_cell.RNNCell):
         return tf.nn.sigmoid(x)
 
     def get_param_constrain_op(self):
-        
-        cm_clipping_op = tf.assign(self.cm_t,tf.clip_by_value(self.cm_t, self._cm_t_min_value, self._cm_t_max_value))
-        gleak_clipping_op = tf.assign(self.gleak,tf.clip_by_value(self.gleak, self._gleak_min_value, self._gleak_max_value))
-        w_clipping_op = tf.assign(self.W,tf.clip_by_value(self.W, self._w_min_value, self._w_max_value))
-        sensory_w_clipping_op = tf.assign(self.sensory_W ,tf.clip_by_value(self.sensory_W, self._w_min_value, self._w_max_value))
+
+        # tf.assign --> tf.compat.v1.assign
+        # https://www.tensorflow.org/api_docs/python/tf/compat/v1/assign
+        cm_clipping_op = tf.compat.v1.assign(self.cm_t,tf.clip_by_value(self.cm_t, self._cm_t_min_value, self._cm_t_max_value))
+        gleak_clipping_op = tf.compat.v1.assign(self.gleak,tf.clip_by_value(self.gleak, self._gleak_min_value, self._gleak_max_value))
+        w_clipping_op = tf.compat.v1.assign(self.W,tf.clip_by_value(self.W, self._w_min_value, self._w_max_value))
+        sensory_w_clipping_op = tf.compat.v1.assign(self.sensory_W ,tf.clip_by_value(self.sensory_W, self._w_min_value, self._w_max_value))
 
         return [cm_clipping_op,gleak_clipping_op,w_clipping_op,sensory_w_clipping_op]
 
