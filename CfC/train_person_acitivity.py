@@ -22,6 +22,9 @@ class PersonActivityLearner(pl.LightningModule):
         self.model = model
         self.loss_fn = nn.CrossEntropyLoss()
         self._hparams = hparams
+        # https://github.com/Lightning-AI/pytorch-lightning/pull/16520
+        # Save them in-memory as instance attributes
+        self.validation_step_outputs = []
 
     def _prepare_batch(self, batch):
         _, t, x, mask, y = batch
@@ -58,7 +61,6 @@ class PersonActivityLearner(pl.LightningModule):
         x, t, mask, y = self._prepare_batch(batch)
 
         y_hat = self.model.forward(x, t, mask=mask)
-
         enable_signal = torch.sum(y, -1) > 0.0
 
         y_hat = y_hat[enable_signal]
@@ -67,20 +69,29 @@ class PersonActivityLearner(pl.LightningModule):
         y = torch.argmax(y, dim=-1)  # labels are given as one-hot
 
         loss = self.loss_fn(y_hat, y)
-
         preds = torch.argmax(y_hat, dim=1)
-
         acc = (preds == y).float().mean()
+
+        # https://github.com/Lightning-AI/pytorch-lightning/pull/16520
+        # Save them in-memory as instance attributes
+        self.validation_step_outputs.append(loss)
 
         self.log("val_loss", loss, prog_bar=True)
         self.log("val_acc", acc, prog_bar=True)
         return loss, acc
 
+    #  https://github.com/Lightning-AI/pytorch-lightning/pull/16520
+    # validation_epoch_end() --> on_validation_end() and save them in-memory
+    def on_validation_epoch_end(self):
+        epoch_average = torch.stack(self.validation_step_outputs).mean()
+        self.log("validation_epoch_average", epoch_average)
+        self.validation_step_outputs.clear()  # free memory
+    ''' old code
     def validation_epoch_end(self, validation_step_outputs):
         val_acc = torch.stack([l[1] for l in validation_step_outputs])
-
         val_acc = torch.mean(val_acc)
         print(f"\nval_acc: {val_acc.item():0.3f}\n")
+    '''
 
     def test_step(self, batch, batch_idx):
         # Here we just reuse the validation_step for testing
